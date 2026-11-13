@@ -59,11 +59,20 @@ h1 button{background:none;border:0;padding:0;text-align:left;font:inherit;letter
 .cell.over,.tray.over{background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .addrow{grid-column:1/-1;border:0;border-top:1px dashed var(--line);background:none;text-align:left;padding:10px 12px;color:var(--muted);font-weight:500;position:sticky;left:0;width:max-content}
 
-.note{background:var(--yellow);color:var(--paper-fg);border:0;border-radius:2px;box-shadow:var(--shadow);padding:6px 7px;font-size:12px;font-weight:500;line-height:1.25;
-  text-align:left;width:100%;min-height:44px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow-wrap:anywhere;white-space:pre-wrap}
+.note{position:relative;background-color:var(--yellow);color:var(--paper-fg);border:0;border-radius:2px 2px 3px 18px/2px 2px 3px 6px;padding:7px 8px 9px;font-size:12px;font-weight:500;line-height:1.25;
+  text-align:left;width:100%;min-height:48px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow-wrap:anywhere;white-space:pre-wrap;
+  background-image:linear-gradient(172deg,rgba(255,255,255,.45) 0%,rgba(255,255,255,.08) 35%,rgba(0,0,0,0) 60%,rgba(0,0,0,.08) 100%);
+  box-shadow:0 1px 1px rgba(0,0,0,.12),3px 6px 8px -3px rgba(0,0,0,.35),inset 0 -6px 8px -6px rgba(0,0,0,.18),inset -10px -10px 12px -12px rgba(0,0,0,.25);
+  transform:rotate(-1.2deg);transition:transform .15s,box-shadow .15s}
+.note:nth-child(even){transform:rotate(1deg)}
+.note:nth-child(3n){transform:rotate(-.4deg)}
+.note::before{content:"";position:absolute;left:0;right:0;top:0;height:9px;background:linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,0));border-radius:2px 2px 0 0;pointer-events:none}
+
+.cell,.tray{isolation:isolate}
+@media (hover:hover){.note:hover{transform:rotate(0) translateY(-2px) scale(1.03);box-shadow:0 2px 2px rgba(0,0,0,.12),0 8px 14px -4px rgba(0,0,0,.3),inset 0 -6px 8px -6px rgba(0,0,0,.18)}}
 .note.lifting{opacity:.7}
 .ph{border:2px dashed var(--accent);border-radius:3px;min-height:44px;flex:none}
-.ghost{position:fixed;z-index:50;pointer-events:none;transform:rotate(3deg);box-shadow:0 10px 24px rgba(0,0,0,.3)}
+.ghost{position:fixed;z-index:50;pointer-events:none;transform:rotate(4deg) scale(1.06)!important;box-shadow:0 16px 28px rgba(0,0,0,.35)!important}
 
 .trayblock{margin-top:16px;display:flex;flex-direction:column;gap:8px;position:sticky;left:0;max-width:calc(100vw - 32px)}
 .trayblock h2{margin:0;font:700 15px var(--display);text-transform:uppercase;letter-spacing:.04em}
@@ -207,7 +216,7 @@ function render(){
   const tp=h('button',{type:'button',className:'plus',textContent:'+ Add'});tp.onclick=()=>noteSheet(null,{row:null,color:'yellow'});tray.append(tp);
 }
 function noteEl(n){
-  const b=h('button',{type:'button',className:'note',textContent:n.text,'data-id':n.id,'style':'background:'+cv(n.color)});
+  const b=h('button',{type:'button',className:'note',textContent:n.text,'data-id':n.id,'style':'background-color:'+cv(n.color)});
   b.addEventListener('pointerdown',e=>pressStart(e,b,n));
   b.addEventListener('click',()=>{if(justDragged)return;noteSheet(n)});
   b.addEventListener('contextmenu',e=>e.preventDefault());
@@ -276,7 +285,7 @@ function noteSheet(n,at){const isNew=!n;let color=n?n.color:at.color;
       const row=rowSel.value||null,m=+mSel.value,w=+wSel.value;let x;
       if(isNew){x=row?{id:uid('n'),text,color,row,m,w}:{id:uid('n'),text,color,row:null};x.pos=Date.now();S.notes.push(x)}
       else{x=n;const moved=n.row!==row||n.m!==m||n.w!==w;Object.assign(n,{text,color,row});if(row){n.m=m;n.w=w}else{delete n.m;delete n.w}if(moved)n.pos=Date.now()}
-      saveNotes([x])},
+      saveNotes([x]);safeRender()},
       isNew?null:()=>{S.notes=S.notes.filter(c=>c!==n);deleteNotes([n.id]);safeRender();toast('Sticky deleted',()=>{S.notes.push(n);saveNotes([n]);safeRender()})},isNew?'Add':'Save');
     if(isNew)setTimeout(()=>ta.focus(),40)})}
 function rowSheet(r){const isNew=!r;let color=r?r.color:'yellow';
@@ -284,17 +293,17 @@ function rowSheet(r){const isNew=!r;let color=r?r.color:'yellow';
     sh.append(h('h3',{textContent:isNew?'New row':'Edit row'}),h('div',{className:'field'},h('label',{htmlFor:'row-name',textContent:'Name'}),inp),
       h('div',{className:'field'},h('span',{className:'lbl',textContent:'Colour for new stickies'}),colourPicker(color,c=>color=c)));
     buttons(sh,close,()=>{const name=inp.value.trim();if(!name){inp.focus();return false}
-      if(isNew)S.rows.push({id:uid('r'),name,color});else Object.assign(r,{name,color});saveBoard()},
+      if(isNew)S.rows.push({id:uid('r'),name,color});else Object.assign(r,{name,color});saveBoard();safeRender()},
       isNew?null:()=>{const i=S.rows.indexOf(r),moved=S.notes.filter(n=>n.row===r.id);moved.forEach(n=>{n.row=null;delete n.m;delete n.w});S.rows.splice(i,1);
         saveBoard();saveNotes(moved);safeRender();
         toast(moved.length?'Row deleted, its stickies moved to the parking lot':'Row deleted',()=>{S.rows.splice(i,0,r);saveBoard();safeRender()})},isNew?'Add row':'Save');
     setTimeout(()=>inp.focus(),40)})}
 function monthSheet(i){sheet((sh,close)=>{const inp=h('input',{type:'text',id:'month-name',value:S.months[i]});
   sh.append(h('h3',{textContent:'Rename month'}),h('div',{className:'field'},h('label',{htmlFor:'month-name',textContent:'Name'}),inp));
-  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.months[i]=v;saveBoard()});setTimeout(()=>inp.select(),40)})}
+  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.months[i]=v;saveBoard();safeRender()});setTimeout(()=>inp.select(),40)})}
 $('#title').onclick=()=>sheet((sh,close)=>{const inp=h('input',{type:'text',id:'board-name',value:S.title});
   sh.append(h('h3',{textContent:'Board name'}),h('div',{className:'field'},h('label',{htmlFor:'board-name',textContent:'Name'}),inp));
-  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.title=v;saveBoard()})});
+  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.title=v;saveBoard();safeRender()})});
 
 /* ===== export / import / print ===== */
 $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
