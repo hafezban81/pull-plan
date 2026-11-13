@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lean Office Pull Plan</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pull Plan">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: wall-board grid — sticky row labels on the left, 3 months x 5 weeks scrolling sideways, parking lot tray below */
+:root{
+  --bg:#f2f3ef; --board:#ffffff; --fg:#1b2026; --muted:#5f6973; --line:#d9dcd6; --line-strong:#9aa1a8;
+  --head:#1f3a5f; --head-fg:#ffffff; --accent:#1f6feb; --danger:#c62828;
+  --display:"Space Grotesk",system-ui,sans-serif; --body:"Inter",system-ui,-apple-system,sans-serif;
+  --shadow:0 1px 1px rgba(0,0,0,.12),0 2px 5px rgba(0,0,0,.08);
+  --pink:#f7a1c4; --yellow:#fbe46b; --orange:#f9b25e; --blue:#8fd0f0; --green:#a6dd7a; --lime:#d9ef6a; --purple:#c9b3f2; --paper-fg:#1d1d1d;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#14171b; --board:#1c2025; --fg:#e8ebee; --muted:#9aa3ac; --line:#2c3238; --line-strong:#56606a;
+  --head:#2c4d7a; --head-fg:#ffffff; --accent:#79a8ff; --danger:#ff8a80; --shadow:0 1px 2px rgba(0,0,0,.5);color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+@media (max-width:600px){h1{font-size:18px}.grid{grid-template-columns:minmax(96px,110px) repeat(15,118px)!important}.month{font-size:12px}}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 var(--body);display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;
+  padding-block:14px 10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{margin:0;font:700 22px/1.15 var(--display);letter-spacing:-.01em;text-transform:uppercase;text-wrap:balance}
+h1 button{background:none;border:0;padding:0;text-align:left;font:inherit;letter-spacing:inherit;text-transform:inherit}
+.tools{display:flex;gap:6px;flex-wrap:wrap}
+.tool{border:1px solid var(--line-strong);background:var(--board);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500}
+.hint{color:var(--muted);font-size:12px;width:100%}
+
+.wrap{flex:1;min-height:0;overflow:auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:16px}
+.grid{display:grid;background:var(--board);border:2px solid var(--line-strong);border-radius:6px;width:max-content;min-width:100%}
+.c{border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0}
+.mstart{border-left:2px solid var(--line-strong)}
+.corner,.rlabel{position:sticky;left:0;z-index:3;background:var(--board);border-right:2px solid var(--line-strong)}
+.corner{z-index:5}
+.month{background:var(--head);color:var(--head-fg);font:700 14px var(--display);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;text-align:center;border:0;border-right:2px solid var(--board);cursor:pointer;width:100%}
+.week{font-size:12px;font-weight:600;color:var(--muted);text-align:center;padding:6px 4px;text-transform:uppercase;letter-spacing:.06em}
+.rlabel{display:flex;align-items:stretch}
+.rlabel button{flex:1;border:0;background:none;text-align:left;padding:10px;font-weight:700;font-size:13px;display:flex;gap:8px;align-items:flex-start;overflow-wrap:anywhere}
+.sw{width:12px;height:12px;border-radius:3px;flex:none;margin-top:2px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.cell{padding:6px;display:flex;flex-direction:column;gap:5px;min-height:112px;position:relative}
+.cell .plus{opacity:0;margin-top:auto;border:1px dashed var(--line-strong);background:transparent;border-radius:6px;font-size:12px;color:var(--muted);padding:3px;transition:opacity .15s}
+.cell:hover .plus,.cell:focus-within .plus{opacity:1}
+@media (hover:none){.cell .plus{opacity:.55}}
+.cell.over,.tray.over{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.addrow{grid-column:1/-1;border:0;border-top:1px dashed var(--line);background:none;text-align:left;padding:10px 12px;color:var(--muted);font-weight:500;position:sticky;left:0;width:max-content}
+
+.note{background:var(--yellow);color:var(--paper-fg);border:0;border-radius:2px;box-shadow:var(--shadow);padding:6px 7px;font-size:12px;font-weight:500;line-height:1.25;
+  text-align:left;width:100%;min-height:44px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow-wrap:anywhere;white-space:pre-wrap}
+.note.lifting{opacity:.7}
+.ph{border:2px dashed var(--accent);border-radius:3px;min-height:44px;flex:none}
+.ghost{position:fixed;z-index:50;pointer-events:none;transform:rotate(3deg);box-shadow:0 10px 24px rgba(0,0,0,.3)}
+
+.trayblock{margin-top:16px;display:flex;flex-direction:column;gap:8px;position:sticky;left:0;max-width:calc(100vw - 32px)}
+.trayblock h2{margin:0;font:700 15px var(--display);text-transform:uppercase;letter-spacing:.04em}
+.trayblock p{margin:0;color:var(--muted);font-size:12px}
+.tray{display:flex;flex-wrap:wrap;gap:8px;min-height:72px;padding:10px;border:2px dashed var(--line-strong);border-radius:8px;align-items:flex-start}
+.tray .note{width:130px}
+.tray .plus{width:130px;min-height:44px;border:1px dashed var(--line-strong);background:transparent;border-radius:4px;color:var(--muted);font-size:12px}
+
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--board);width:100%;max-width:520px;border-radius:16px 16px 0 0;display:flex;flex-direction:column;gap:14px;max-height:90%;overflow:auto;
+  padding:18px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+@media (min-width:640px){.scrim{align-items:center}.sheet{border-radius:16px}}
+.sheet h3{margin:0;font:700 18px var(--display)}
+.field{display:flex;flex-direction:column;gap:6px}
+.field>label,.lbl{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+textarea,input[type=text]{width:100%;font:inherit;font-size:16px;background:var(--bg);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:9px 11px}
+select{font:inherit;font-size:15px;background:var(--bg);color:var(--fg);border:1px solid var(--line-strong);border-radius:8px;padding:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.colour{width:34px;height:34px;border-radius:6px;border:2px solid transparent;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.colour[aria-pressed="true"]{border-color:var(--fg)}
+.actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.btn{border:0;border-radius:8px;padding:10px 16px;font-weight:600;background:var(--accent);color:#fff}
+.btn.sec{background:transparent;border:1px solid var(--line-strong);color:var(--fg)}
+.btn.del{background:transparent;color:var(--danger);padding-inline:4px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;z-index:70;display:flex;gap:12px;align-items:center}
+.toast button{background:none;border:0;color:inherit;font-weight:700;text-decoration:underline}
+@media print{header .tools,.hint,.plus,.addrow,.trayblock{display:none!important}body{background:#fff}.wrap{overflow:visible}}
+</style>
+</head>
+<body>
+<header>
+  <h1><button id="title" type="button" title="Rename board"></button></h1>
+  <div class="tools">
+    <button class="tool" id="exportBtn" type="button">Export</button>
+    <button class="tool" id="importBtn" type="button">Import</button>
+    <button class="tool" id="printBtn" type="button">Print</button>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  </div>
+  <div class="hint">Tap a box to add a sticky. Drag stickies to move them (on a phone, hold first). Tap a month or row name to rename it.</div>
+</header>
+<div class="wrap" id="wrap">
+  <div class="grid" id="grid"></div>
+  <div class="trayblock">
+    <h2>Parking lot</h2>
+    <p>Stickies without a week yet. Drag them onto the board when you know when they happen.</p>
+    <div class="tray" id="tray"></div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden role="status"><span id="toastMsg"></span><button id="undo" type="button">Undo</button></div>
+
+<script>
+(function(){
+const KEY='lean-office-pullplan-v1';
+const COLOURS=['pink','yellow','orange','blue','green','lime','purple'];
+const SAMPLE={title:'3-Month Forecast & Lean Office Event Calendar',weeks:5,
+ months:['Month 1: December','Month 2: January','Month 3: February'],
+ rows:[{id:'r1',name:'Facilitation',color:'pink'},{id:'r2',name:'Events',color:'blue'},{id:'r3',name:'GWP',color:'green'},
+       {id:'r4',name:'Continuous Improvement',color:'orange'},{id:'r5',name:'Key Events & Milestones',color:'lime'}],
+ notes:[{id:'n1',text:'GWP',color:'green',row:null},{id:'n2',text:'#2 Quarterly Sharing',color:'blue',row:null},{id:'n3',text:'Reply from HR',color:'yellow',row:null}]};
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!Array.isArray(S.rows))S=JSON.parse(JSON.stringify(SAMPLE));
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const $=s=>document.querySelector(s);
+const grid=$('#grid'),tray=$('#tray'),wrap=$('#wrap');
+const cv=c=>'var(--'+c+')';
+function h(tag,props,...kids){const n=document.createElement(tag);if(props)for(const k in props){if(k==='style')n.style.cssText=props[k];else if(k.startsWith('data-'))n.setAttribute(k,props[k]);else n[k]=props[k]}kids.forEach(k=>k!=null&&n.append(k));return n}
+const inCell=(r,m,w)=>S.notes.filter(n=>n.row===r&&n.m===m&&n.w===w);
+
+function render(){
+  $('#title').textContent=S.title;document.title=S.title;
+  const W=S.weeks,M=S.months.length;
+  grid.style.gridTemplateColumns='minmax(120px,150px) repeat('+(W*M)+',minmax(118px,1fr))';
+  grid.textContent='';
+  grid.append(h('div',{className:'c corner','style':'grid-row:span 2'}));
+  S.months.forEach((name,mi)=>{
+    const b=h('button',{type:'button',className:'month',textContent:name,title:'Rename month'});b.onclick=()=>monthSheet(mi);
+    grid.append(h('div',{className:'c mstart','style':'grid-column:span '+W+';padding:0'},b));
+  });
+  S.months.forEach((_,mi)=>{for(let w=0;w<W;w++)grid.append(h('div',{className:'c week'+(w===0?' mstart':''),textContent:'Week '+(w+1)}))});
+  S.rows.forEach(r=>{
+    const lb=h('button',{type:'button',title:'Edit row'},h('span',{className:'sw','style':'background:'+cv(r.color)}),h('span',{textContent:r.name}));
+    lb.onclick=()=>rowSheet(r);
+    grid.append(h('div',{className:'c rlabel'},lb));
+    S.months.forEach((_,mi)=>{for(let w=0;w<W;w++){
+      const cell=h('div',{className:'c cell'+(w===0?' mstart':''),'data-row':r.id,'data-m':mi,'data-w':w});
+      inCell(r.id,mi,w).forEach(n=>cell.append(noteEl(n)));
+      const p=h('button',{type:'button',className:'plus',textContent:'+ Add','aria-label':'Add sticky to '+r.name+', '+S.months[mi]+', week '+(w+1)});
+      p.onclick=()=>noteSheet(null,{row:r.id,m:mi,w,color:r.color});
+      cell.append(p);
+      cell.addEventListener('click',e=>{if(e.target===cell)noteSheet(null,{row:r.id,m:mi,w,color:r.color})});
+      grid.append(cell);
+    }});
+  });
+  const ar=h('button',{type:'button',className:'addrow',textContent:'+ Add row'});ar.onclick=()=>rowSheet(null);grid.append(ar);
+  tray.textContent='';
+  S.notes.filter(n=>n.row==null).forEach(n=>tray.append(noteEl(n)));
+  const tp=h('button',{type:'button',className:'plus',textContent:'+ Add'});tp.onclick=()=>noteSheet(null,{row:null,color:'yellow'});tray.append(tp);
+}
+function noteEl(n){
+  const b=h('button',{type:'button',className:'note',textContent:n.text,'data-id':n.id,'style':'background:'+cv(n.color)});
+  b.addEventListener('pointerdown',e=>pressStart(e,b,n));
+  b.addEventListener('click',e=>{if(justDragged)return;noteSheet(n)});
+  b.addEventListener('contextmenu',e=>e.preventDefault());
+  return b;
+}
+
+/* drag */
+let press=null,drag=null,justDragged=false;
+function pressStart(e,el,n){if(e.button>0)return;press={x:e.clientX,y:e.clientY,el,n,type:e.pointerType};
+  if(e.pointerType!=='mouse'){el.classList.add('lifting');press.t=setTimeout(()=>begin(press.x,press.y),260)}}
+document.addEventListener('pointermove',e=>{if(drag){move(e.clientX,e.clientY);return}if(!press)return;
+  const d=Math.hypot(e.clientX-press.x,e.clientY-press.y);if(press.type==='mouse'){if(d>5)begin(e.clientX,e.clientY)}else if(d>10)cancel()});
+document.addEventListener('pointerup',()=>{drag?end():cancel()});
+document.addEventListener('pointercancel',()=>{drag?end():cancel()});
+document.addEventListener('touchmove',e=>{if(drag)e.preventDefault()},{passive:false});
+function cancel(){if(!press)return;clearTimeout(press.t);press.el.classList.remove('lifting');press=null}
+function begin(x,y){if(!press)return;const {el,n}=press;clearTimeout(press.t);el.classList.remove('lifting');
+  const r=el.getBoundingClientRect();const g=el.cloneNode(true);g.classList.add('ghost');
+  Object.assign(g.style,{width:r.width+'px',left:r.left+'px',top:r.top+'px'});document.body.append(g);
+  const ph=h('div',{className:'ph'});ph.style.height=r.height+'px';if(el.parentElement===tray)ph.style.width='130px';el.replaceWith(ph);
+  drag={n,g,ph,dx:x-r.left,dy:y-r.top,x,y};press=null;try{navigator.vibrate&&navigator.vibrate(10)}catch(e){}
+  drag.raf=requestAnimationFrame(auto);move(x,y)}
+function target(x,y){const u=document.elementFromPoint(x,y);return u&&(u.closest('.cell')||u.closest('.tray'))}
+function move(x,y){drag.x=x;drag.y=y;drag.g.style.left=(x-drag.dx)+'px';drag.g.style.top=(y-drag.dy)+'px';
+  const t=target(x,y);document.querySelectorAll('.over').forEach(o=>o!==t&&o.classList.remove('over'));if(!t)return;t.classList.add('over');
+  const isTray=t===tray;drag.ph.style.width=isTray?'130px':'';
+  const notes=[...t.querySelectorAll('.note')];let before=null;
+  for(const c of notes){const r=c.getBoundingClientRect();if(isTray?(y<r.bottom&&x<r.left+r.width/2)||y<r.top:y<r.top+r.height/2){before=c;break}}
+  const plus=t.querySelector('.plus');const ref=before||plus;
+  if(drag.ph.nextSibling!==ref||drag.ph.parentElement!==t)t.insertBefore(drag.ph,ref)}
+function auto(){if(!drag)return;const r=wrap.getBoundingClientRect(),e=50;let moved=false;
+  if(drag.x<r.left+e+150){wrap.scrollLeft-=12;moved=true}else if(drag.x>r.right-e){wrap.scrollLeft+=12;moved=true}
+  if(drag.y<r.top+e){wrap.scrollTop-=12;moved=true}else if(drag.y>r.bottom-e){wrap.scrollTop+=12;moved=true}
+  if(moved)move(drag.x,drag.y);drag.raf=requestAnimationFrame(auto)}
+function end(){const {n,g,ph}=drag;cancelAnimationFrame(drag.raf);const t=ph.parentElement;
+  if(t&&(t.classList.contains('cell')||t===tray)){
+    const ids=[...t.children].map(c=>c===ph?n.id:c.dataset.id).filter(Boolean);
+    if(t===tray){n.row=null;delete n.m;delete n.w}else{n.row=t.dataset.row;n.m=+t.dataset.m;n.w=+t.dataset.w}
+    const same=c=>c.row===n.row&&(n.row==null||(c.m===n.m&&c.w===n.w));
+    S.notes=S.notes.filter(c=>c!==n&&!same(c)).concat(ids.map(id=>S.notes.find(c=>c.id===id)));save()}
+  g.remove();drag=null;justDragged=true;setTimeout(()=>justDragged=false,60);
+  document.querySelectorAll('.over').forEach(o=>o.classList.remove('over'));
+  const sl=wrap.scrollLeft,st=wrap.scrollTop;render();wrap.scrollLeft=sl;wrap.scrollTop=st}
+
+/* sheets */
+function sheet(build){const sc=h('div',{className:'scrim'}),sh=h('div',{className:'sheet'});sh.setAttribute('role','dialog');sh.setAttribute('aria-modal','true');
+  sc.append(sh);document.body.append(sc);const close=()=>{sc.remove();document.removeEventListener('keydown',esc)};
+  const esc=e=>{if(e.key==='Escape')close()};document.addEventListener('keydown',esc);sc.addEventListener('click',e=>{if(e.target===sc)close()});build(sh,close)}
+function colourPicker(cur,on){const row=h('div',{className:'row'});COLOURS.forEach(c=>{const b=h('button',{type:'button',className:'colour','style':'background:'+cv(c),'aria-label':c});
+  b.setAttribute('aria-pressed',c===cur);b.onclick=()=>{row.querySelectorAll('.colour').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');on(c)};row.append(b)});return row}
+function buttons(sh,close,onSave,onDel,saveLabel){const left=h('div',{className:'row'});if(onDel){const d=h('button',{type:'button',className:'btn del',textContent:'Delete'});d.onclick=()=>{onDel();close()};left.append(d)}
+  const s=h('button',{type:'button',className:'btn',textContent:saveLabel||'Save'});s.onclick=()=>{if(onSave()!==false)close()};
+  const c=h('button',{type:'button',className:'btn sec',textContent:'Cancel'});c.onclick=close;sh.append(h('div',{className:'actions'},left,h('div',{className:'row'},c,s)))}
+function noteSheet(n,at){const isNew=!n;let color=n?n.color:at.color;
+  sheet((sh,close)=>{const ta=h('textarea',{id:'note-text',rows:3,value:n?n.text:'',placeholder:'e.g. Deadline: meetings'});
+    const rowSel=h('select',{id:'note-row'});rowSel.append(h('option',{value:'',textContent:'Parking lot (no week yet)'}));
+    S.rows.forEach(r=>rowSel.append(h('option',{value:r.id,textContent:r.name})));
+    const mSel=h('select',{id:'note-month'});S.months.forEach((m,i)=>mSel.append(h('option',{value:i,textContent:m})));
+    const wSel=h('select',{id:'note-week'});for(let i=0;i<S.weeks;i++)wSel.append(h('option',{value:i,textContent:'Week '+(i+1)}));
+    const cur=n||at;rowSel.value=cur.row||'';mSel.value=cur.m??0;wSel.value=cur.w??0;
+    const when=h('div',{className:'row'},mSel,wSel);const sync=()=>when.hidden=!rowSel.value;rowSel.onchange=sync;sync();
+    sh.append(h('h3',{textContent:isNew?'New sticky':'Edit sticky'}),
+      h('div',{className:'field'},h('label',{htmlFor:'note-text',textContent:'Text'}),ta),
+      h('div',{className:'field'},h('span',{className:'lbl',textContent:'Colour'}),colourPicker(color,c=>color=c)),
+      h('div',{className:'field'},h('label',{htmlFor:'note-row',textContent:'Row and week'}),rowSel,when));
+    buttons(sh,close,()=>{const text=ta.value.trim();if(!text){ta.focus();return false}
+      const row=rowSel.value||null,m=+mSel.value,w=+wSel.value;
+      if(isNew)S.notes.push(row?{id:uid('n'),text,color,row,m,w}:{id:uid('n'),text,color,row:null});
+      else{const moved=n.row!==row||n.m!==m||n.w!==w;Object.assign(n,{text,color,row});if(row){n.m=m;n.w=w}else{delete n.m;delete n.w}
+        if(moved){S.notes=S.notes.filter(c=>c!==n);S.notes.push(n)}}
+      save();render()},
+      isNew?null:()=>{const i=S.notes.indexOf(n);S.notes.splice(i,1);save();render();toast('Sticky deleted',()=>{S.notes.splice(i,0,n);save();render()})},isNew?'Add':'Save');
+    if(isNew)setTimeout(()=>ta.focus(),40)})}
+function rowSheet(r){const isNew=!r;let color=r?r.color:'yellow';
+  sheet((sh,close)=>{const inp=h('input',{type:'text',id:'row-name',value:r?r.name:'',placeholder:'e.g. Training'});
+    sh.append(h('h3',{textContent:isNew?'New row':'Edit row'}),h('div',{className:'field'},h('label',{htmlFor:'row-name',textContent:'Name'}),inp),
+      h('div',{className:'field'},h('span',{className:'lbl',textContent:'Colour for new stickies'}),colourPicker(color,c=>color=c)));
+    buttons(sh,close,()=>{const name=inp.value.trim();if(!name){inp.focus();return false}
+      if(isNew)S.rows.push({id:uid('r'),name,color});else Object.assign(r,{name,color});save();render()},
+      isNew?null:()=>{const i=S.rows.indexOf(r),moved=S.notes.filter(n=>n.row===r.id);moved.forEach(n=>{n.row=null});S.rows.splice(i,1);save();render();
+        toast(moved.length?'Row deleted, its stickies moved to the parking lot':'Row deleted',()=>{S.rows.splice(i,0,r);moved.forEach(n=>n.row=r.id);save();render()})},isNew?'Add row':'Save');
+    setTimeout(()=>inp.focus(),40)})}
+function monthSheet(i){sheet((sh,close)=>{const inp=h('input',{type:'text',id:'month-name',value:S.months[i]});
+  sh.append(h('h3',{textContent:'Rename month'}),h('div',{className:'field'},h('label',{htmlFor:'month-name',textContent:'Name'}),inp));
+  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.months[i]=v;save();render()});setTimeout(()=>inp.select(),40)})}
+$('#title').onclick=()=>sheet((sh,close)=>{const inp=h('input',{type:'text',id:'board-name',value:S.title});
+  sh.append(h('h3',{textContent:'Board name'}),h('div',{className:'field'},h('label',{htmlFor:'board-name',textContent:'Name'}),inp));
+  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.title=v;save();render()})});
+
+/* export / import / print */
+$('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const a=h('a',{href:URL.createObjectURL(blob),download:'pull-plan-'+new Date().toISOString().slice(0,10)+'.json'});document.body.append(a);a.click();a.remove();toast('Exported',null)};
+$('#importBtn').onclick=()=>$('#importFile').click();
+$('#importFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);
+  if(!Array.isArray(d.rows)||!Array.isArray(d.notes)||!Array.isArray(d.months))throw 0;const old=S;S=d;save();render();toast('Board imported',()=>{S=old;save();render()})}
+  catch(err){toast('That file is not a pull plan export',null)}};r.readAsText(f);e.target.value=''};
+$('#printBtn').onclick=()=>window.print();
+
+let tt;function toast(msg,undo){const t=$('#toast');$('#toastMsg').textContent=msg;$('#undo').hidden=!undo;t.hidden=false;clearTimeout(tt);
+  $('#undo').onclick=()=>{t.hidden=true;undo&&undo()};tt=setTimeout(()=>t.hidden=true,5000)}
+render();
+})();
+</script>
+</body>
+</html>
