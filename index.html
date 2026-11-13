@@ -23,7 +23,7 @@
   --head:#2c4d7a; --head-fg:#ffffff; --accent:#79a8ff; --danger:#ff8a80; --shadow:0 1px 2px rgba(0,0,0,.5);color-scheme:dark}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-@media (max-width:600px){h1{font-size:18px}.grid{grid-template-columns:minmax(96px,110px) repeat(15,118px)!important}.month{font-size:12px}}
+@media (max-width:600px){h1{font-size:18px}.grid{grid-template-columns:minmax(96px,110px) repeat(var(--cols,15),118px)}.month{font-size:12px}}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:14px/1.4 var(--body);display:flex;flex-direction:column;
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-tap-highlight-color:transparent}
@@ -36,10 +36,13 @@ h1{margin:0;font:700 22px/1.15 var(--display);letter-spacing:-.01em;text-transfo
 h1 button{background:none;border:0;padding:0;text-align:left;font:inherit;letter-spacing:inherit;text-transform:inherit}
 .tools{display:flex;gap:6px;flex-wrap:wrap}
 .tool{border:1px solid var(--line-strong);background:var(--board);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500}
+.status{align-self:center;font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--line);color:var(--muted)}
+.status[data-kind="live"]{background:#d6f5df;color:#14662f}
+.status[data-kind="err"]{background:#fde2e0;color:#a3221b}
 .hint{color:var(--muted);font-size:12px;width:100%}
 
 .wrap{flex:1;min-height:0;overflow:auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:16px}
-.grid{display:grid;background:var(--board);border:2px solid var(--line-strong);border-radius:6px;width:max-content;min-width:100%}
+.grid{display:grid;grid-template-columns:minmax(120px,150px) repeat(var(--cols,15),minmax(118px,1fr));background:var(--board);border:2px solid var(--line-strong);border-radius:6px;width:max-content;min-width:100%}
 .c{border-right:1px solid var(--line);border-bottom:1px solid var(--line);min-width:0}
 .mstart{border-left:2px solid var(--line-strong)}
 .corner,.rlabel{position:sticky;left:0;z-index:3;background:var(--board);border-right:2px solid var(--line-strong)}
@@ -94,6 +97,7 @@ select{font:inherit;font-size:15px;background:var(--bg);color:var(--fg);border:1
 <header>
   <h1><button id="title" type="button" title="Rename board"></button></h1>
   <div class="tools">
+    <span class="status" id="status" data-kind="wait">Loading…</span>
     <button class="tool" id="exportBtn" type="button">Export</button>
     <button class="tool" id="importBtn" type="button">Import</button>
     <button class="tool" id="printBtn" type="button">Print</button>
@@ -111,37 +115,78 @@ select{font:inherit;font-size:15px;background:var(--bg);color:var(--fg);border:1
 </div>
 <div id="toast" class="toast" hidden role="status"><span id="toastMsg"></span><button id="undo" type="button">Undo</button></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <script>
 (function(){
-const KEY='lean-office-pullplan-v1';
+/* ===== Settings: paste your Supabase details here ===== */
+const SUPABASE_URL = 'https://mlzbskhbnisflpzvakzq.supabase.co';        // e.g. https://abcdxyz.supabase.co
+const SUPABASE_ANON_KEY = 'sb_publishable_xy2cwrwYkrzpJWYSqXk1Yg_CESA6qTz';   // the "anon public" key
+/* ====================================================== */
+const BOARD_ID=(new URLSearchParams(location.search).get('board')||'lean-office').replace(/[^\w-]/g,'').slice(0,40)||'lean-office';
+const KEY='lean-office-pullplan-v1:'+BOARD_ID;
 const COLOURS=['pink','yellow','orange','blue','green','lime','purple'];
 const SAMPLE={title:'3-Month Forecast & Lean Office Event Calendar',weeks:5,
  months:['Month 1: December','Month 2: January','Month 3: February'],
  rows:[{id:'r1',name:'Facilitation',color:'pink'},{id:'r2',name:'Events',color:'blue'},{id:'r3',name:'GWP',color:'green'},
        {id:'r4',name:'Continuous Improvement',color:'orange'},{id:'r5',name:'Key Events & Milestones',color:'lime'}],
- notes:[{id:'n1',text:'GWP',color:'green',row:null},{id:'n2',text:'#2 Quarterly Sharing',color:'blue',row:null},{id:'n3',text:'Reply from HR',color:'yellow',row:null}]};
+ notes:[{id:'n1',text:'GWP',color:'green',row:null,pos:1},{id:'n2',text:'#2 Quarterly Sharing',color:'blue',row:null,pos:2},{id:'n3',text:'Reply from HR',color:'yellow',row:null,pos:3}]};
 let S;
-try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+try{S=JSON.parse(localStorage.getItem(KEY))||JSON.parse(localStorage.getItem('lean-office-pullplan-v1'))}catch(e){}
 if(!S||!Array.isArray(S.rows))S=JSON.parse(JSON.stringify(SAMPLE));
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+S.notes.forEach((n,i)=>{if(n.pos==null)n.pos=i+1});
+const cache=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const $=s=>document.querySelector(s);
-const grid=$('#grid'),tray=$('#tray'),wrap=$('#wrap');
+const grid=$('#grid'),tray=$('#tray'),wrap=$('#wrap'),statusEl=$('#status');
 const cv=c=>'var(--'+c+')';
 function h(tag,props,...kids){const n=document.createElement(tag);if(props)for(const k in props){if(k==='style')n.style.cssText=props[k];else if(k.startsWith('data-'))n.setAttribute(k,props[k]);else n[k]=props[k]}kids.forEach(k=>k!=null&&n.append(k));return n}
-const inCell=(r,m,w)=>S.notes.filter(n=>n.row===r&&n.m===m&&n.w===w);
+const byPos=(a,b)=>(a.pos||0)-(b.pos||0);
+const inCell=(r,m,w)=>S.notes.filter(n=>n.row===r&&n.m===m&&n.w===w).sort(byPos);
 
+/* ===== database ===== */
+let db=null,live=false;
+function setStatus(kind,text){statusEl.dataset.kind=kind;statusEl.textContent=text}
+const boardData=()=>({title:S.title,weeks:S.weeks,months:S.months,rows:S.rows});
+const toRow=n=>({id:n.id,board:BOARD_ID,text:n.text,color:n.color,row_id:n.row||null,m:n.row?n.m:null,w:n.row?n.w:null,pos:n.pos||0,updated_at:new Date().toISOString()});
+const fromRow=r=>{const n={id:r.id,text:r.text,color:r.color||'yellow',row:r.row_id||null,pos:r.pos||0};if(n.row){n.m=r.m;n.w=r.w}return n};
+function fail(e){console.error(e);setStatus('err','Not saved online — check connection');}
+async function saveBoard(){cache();if(!db)return;const {error}=await db.from('boards').upsert({id:BOARD_ID,data:boardData(),updated_at:new Date().toISOString()});if(error)fail(error)}
+async function saveNotes(list){cache();if(!db||!list.length)return;const {error}=await db.from('notes').upsert(list.map(toRow));if(error)fail(error)}
+async function deleteNotes(ids){cache();if(!db||!ids.length)return;const {error}=await db.from('notes').delete().in('id',ids);if(error)fail(error)}
+async function connect(){
+  if(!SUPABASE_URL||!SUPABASE_ANON_KEY){setStatus('local','Saved on this device only');return}
+  if(!window.supabase){setStatus('err','Could not load Supabase');return}
+  db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+  setStatus('wait','Connecting…');
+  const [b,n]=await Promise.all([db.from('boards').select('data').eq('id',BOARD_ID).maybeSingle(),db.from('notes').select('*').eq('board',BOARD_ID)]);
+  if(b.error||n.error){fail(b.error||n.error);db=null;return}
+  if(b.data&&b.data.data){Object.assign(S,b.data.data);S.notes=n.data.map(fromRow)}
+  else{await saveBoard();await saveNotes(S.notes)}  // first time: put this device's board online
+  cache();safeRender();
+  db.channel('board-'+BOARD_ID)
+    .on('postgres_changes',{event:'*',schema:'public',table:'notes'},p=>{
+      if(p.eventType==='DELETE'){const id=p.old&&p.old.id;S.notes=S.notes.filter(x=>x.id!==id)}
+      else{if(p.new.board!==BOARD_ID)return;const n=fromRow(p.new),i=S.notes.findIndex(x=>x.id===n.id);if(i>=0)S.notes[i]=n;else S.notes.push(n)}
+      cache();safeRender()})
+    .on('postgres_changes',{event:'*',schema:'public',table:'boards',filter:'id=eq.'+BOARD_ID},p=>{if(p.new&&p.new.data){Object.assign(S,p.new.data);cache();safeRender()}})
+    .subscribe(st=>{live=st==='SUBSCRIBED';setStatus(live?'live':'wait',live?'Live · shared':'Reconnecting…')});
+}
+let pending=false;
+function safeRender(){if(drag||document.querySelector('.scrim')){pending=true;return}const sl=wrap.scrollLeft,st=wrap.scrollTop;render();wrap.scrollLeft=sl;wrap.scrollTop=st}
+function flush(){if(pending){pending=false;safeRender()}}
+
+/* ===== render ===== */
 function render(){
   $('#title').textContent=S.title;document.title=S.title;
   const W=S.weeks,M=S.months.length;
-  grid.style.gridTemplateColumns='minmax(120px,150px) repeat('+(W*M)+',minmax(118px,1fr))';
+  grid.style.setProperty('--cols',W*M);
   grid.textContent='';
   grid.append(h('div',{className:'c corner','style':'grid-row:span 2'}));
   S.months.forEach((name,mi)=>{
     const b=h('button',{type:'button',className:'month',textContent:name,title:'Rename month'});b.onclick=()=>monthSheet(mi);
     grid.append(h('div',{className:'c mstart','style':'grid-column:span '+W+';padding:0'},b));
   });
-  S.months.forEach((_,mi)=>{for(let w=0;w<W;w++)grid.append(h('div',{className:'c week'+(w===0?' mstart':''),textContent:'Week '+(w+1)}))});
+  S.months.forEach(()=>{for(let w=0;w<W;w++)grid.append(h('div',{className:'c week'+(w===0?' mstart':''),textContent:'Week '+(w+1)}))});
   S.rows.forEach(r=>{
     const lb=h('button',{type:'button',title:'Edit row'},h('span',{className:'sw','style':'background:'+cv(r.color)}),h('span',{textContent:r.name}));
     lb.onclick=()=>rowSheet(r);
@@ -158,18 +203,18 @@ function render(){
   });
   const ar=h('button',{type:'button',className:'addrow',textContent:'+ Add row'});ar.onclick=()=>rowSheet(null);grid.append(ar);
   tray.textContent='';
-  S.notes.filter(n=>n.row==null).forEach(n=>tray.append(noteEl(n)));
+  S.notes.filter(n=>n.row==null).sort(byPos).forEach(n=>tray.append(noteEl(n)));
   const tp=h('button',{type:'button',className:'plus',textContent:'+ Add'});tp.onclick=()=>noteSheet(null,{row:null,color:'yellow'});tray.append(tp);
 }
 function noteEl(n){
   const b=h('button',{type:'button',className:'note',textContent:n.text,'data-id':n.id,'style':'background:'+cv(n.color)});
   b.addEventListener('pointerdown',e=>pressStart(e,b,n));
-  b.addEventListener('click',e=>{if(justDragged)return;noteSheet(n)});
+  b.addEventListener('click',()=>{if(justDragged)return;noteSheet(n)});
   b.addEventListener('contextmenu',e=>e.preventDefault());
   return b;
 }
 
-/* drag */
+/* ===== drag ===== */
 let press=null,drag=null,justDragged=false;
 function pressStart(e,el,n){if(e.button>0)return;press={x:e.clientX,y:e.clientY,el,n,type:e.pointerType};
   if(e.pointerType!=='mouse'){el.classList.add('lifting');press.t=setTimeout(()=>begin(press.x,press.y),260)}}
@@ -191,29 +236,28 @@ function move(x,y){drag.x=x;drag.y=y;drag.g.style.left=(x-drag.dx)+'px';drag.g.s
   const isTray=t===tray;drag.ph.style.width=isTray?'130px':'';
   const notes=[...t.querySelectorAll('.note')];let before=null;
   for(const c of notes){const r=c.getBoundingClientRect();if(isTray?(y<r.bottom&&x<r.left+r.width/2)||y<r.top:y<r.top+r.height/2){before=c;break}}
-  const plus=t.querySelector('.plus');const ref=before||plus;
+  const ref=before||t.querySelector('.plus');
   if(drag.ph.nextSibling!==ref||drag.ph.parentElement!==t)t.insertBefore(drag.ph,ref)}
 function auto(){if(!drag)return;const r=wrap.getBoundingClientRect(),e=50;let moved=false;
   if(drag.x<r.left+e+150){wrap.scrollLeft-=12;moved=true}else if(drag.x>r.right-e){wrap.scrollLeft+=12;moved=true}
   if(drag.y<r.top+e){wrap.scrollTop-=12;moved=true}else if(drag.y>r.bottom-e){wrap.scrollTop+=12;moved=true}
   if(moved)move(drag.x,drag.y);drag.raf=requestAnimationFrame(auto)}
-function end(){const {n,g,ph}=drag;cancelAnimationFrame(drag.raf);const t=ph.parentElement;
+function end(){const {n,g,ph}=drag;cancelAnimationFrame(drag.raf);const t=ph.parentElement;let changed=[];
   if(t&&(t.classList.contains('cell')||t===tray)){
-    const ids=[...t.children].map(c=>c===ph?n.id:c.dataset.id).filter(Boolean);
     if(t===tray){n.row=null;delete n.m;delete n.w}else{n.row=t.dataset.row;n.m=+t.dataset.m;n.w=+t.dataset.w}
-    const same=c=>c.row===n.row&&(n.row==null||(c.m===n.m&&c.w===n.w));
-    S.notes=S.notes.filter(c=>c!==n&&!same(c)).concat(ids.map(id=>S.notes.find(c=>c.id===id)));save()}
+    const ids=[...t.children].map(c=>c===ph?n.id:c.dataset.id).filter(Boolean);
+    changed=ids.map((id,i)=>{const x=S.notes.find(c=>c.id===id);x.pos=i+1;return x});}
   g.remove();drag=null;justDragged=true;setTimeout(()=>justDragged=false,60);
   document.querySelectorAll('.over').forEach(o=>o.classList.remove('over'));
-  const sl=wrap.scrollLeft,st=wrap.scrollTop;render();wrap.scrollLeft=sl;wrap.scrollTop=st}
+  pending=false;safeRender();saveNotes(changed)}
 
-/* sheets */
+/* ===== sheets ===== */
 function sheet(build){const sc=h('div',{className:'scrim'}),sh=h('div',{className:'sheet'});sh.setAttribute('role','dialog');sh.setAttribute('aria-modal','true');
-  sc.append(sh);document.body.append(sc);const close=()=>{sc.remove();document.removeEventListener('keydown',esc)};
+  sc.append(sh);document.body.append(sc);const close=()=>{sc.remove();document.removeEventListener('keydown',esc);flush()};
   const esc=e=>{if(e.key==='Escape')close()};document.addEventListener('keydown',esc);sc.addEventListener('click',e=>{if(e.target===sc)close()});build(sh,close)}
 function colourPicker(cur,on){const row=h('div',{className:'row'});COLOURS.forEach(c=>{const b=h('button',{type:'button',className:'colour','style':'background:'+cv(c),'aria-label':c});
   b.setAttribute('aria-pressed',c===cur);b.onclick=()=>{row.querySelectorAll('.colour').forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');on(c)};row.append(b)});return row}
-function buttons(sh,close,onSave,onDel,saveLabel){const left=h('div',{className:'row'});if(onDel){const d=h('button',{type:'button',className:'btn del',textContent:'Delete'});d.onclick=()=>{onDel();close()};left.append(d)}
+function buttons(sh,close,onSave,onDel,saveLabel){const left=h('div',{className:'row'});if(onDel){const d=h('button',{type:'button',className:'btn del',textContent:'Delete'});d.onclick=()=>{close();onDel()};left.append(d)}
   const s=h('button',{type:'button',className:'btn',textContent:saveLabel||'Save'});s.onclick=()=>{if(onSave()!==false)close()};
   const c=h('button',{type:'button',className:'btn sec',textContent:'Cancel'});c.onclick=close;sh.append(h('div',{className:'actions'},left,h('div',{className:'row'},c,s)))}
 function noteSheet(n,at){const isNew=!n;let color=n?n.color:at.color;
@@ -229,41 +273,43 @@ function noteSheet(n,at){const isNew=!n;let color=n?n.color:at.color;
       h('div',{className:'field'},h('span',{className:'lbl',textContent:'Colour'}),colourPicker(color,c=>color=c)),
       h('div',{className:'field'},h('label',{htmlFor:'note-row',textContent:'Row and week'}),rowSel,when));
     buttons(sh,close,()=>{const text=ta.value.trim();if(!text){ta.focus();return false}
-      const row=rowSel.value||null,m=+mSel.value,w=+wSel.value;
-      if(isNew)S.notes.push(row?{id:uid('n'),text,color,row,m,w}:{id:uid('n'),text,color,row:null});
-      else{const moved=n.row!==row||n.m!==m||n.w!==w;Object.assign(n,{text,color,row});if(row){n.m=m;n.w=w}else{delete n.m;delete n.w}
-        if(moved){S.notes=S.notes.filter(c=>c!==n);S.notes.push(n)}}
-      save();render()},
-      isNew?null:()=>{const i=S.notes.indexOf(n);S.notes.splice(i,1);save();render();toast('Sticky deleted',()=>{S.notes.splice(i,0,n);save();render()})},isNew?'Add':'Save');
+      const row=rowSel.value||null,m=+mSel.value,w=+wSel.value;let x;
+      if(isNew){x=row?{id:uid('n'),text,color,row,m,w}:{id:uid('n'),text,color,row:null};x.pos=Date.now();S.notes.push(x)}
+      else{x=n;const moved=n.row!==row||n.m!==m||n.w!==w;Object.assign(n,{text,color,row});if(row){n.m=m;n.w=w}else{delete n.m;delete n.w}if(moved)n.pos=Date.now()}
+      saveNotes([x])},
+      isNew?null:()=>{S.notes=S.notes.filter(c=>c!==n);deleteNotes([n.id]);safeRender();toast('Sticky deleted',()=>{S.notes.push(n);saveNotes([n]);safeRender()})},isNew?'Add':'Save');
     if(isNew)setTimeout(()=>ta.focus(),40)})}
 function rowSheet(r){const isNew=!r;let color=r?r.color:'yellow';
   sheet((sh,close)=>{const inp=h('input',{type:'text',id:'row-name',value:r?r.name:'',placeholder:'e.g. Training'});
     sh.append(h('h3',{textContent:isNew?'New row':'Edit row'}),h('div',{className:'field'},h('label',{htmlFor:'row-name',textContent:'Name'}),inp),
       h('div',{className:'field'},h('span',{className:'lbl',textContent:'Colour for new stickies'}),colourPicker(color,c=>color=c)));
     buttons(sh,close,()=>{const name=inp.value.trim();if(!name){inp.focus();return false}
-      if(isNew)S.rows.push({id:uid('r'),name,color});else Object.assign(r,{name,color});save();render()},
-      isNew?null:()=>{const i=S.rows.indexOf(r),moved=S.notes.filter(n=>n.row===r.id);moved.forEach(n=>{n.row=null});S.rows.splice(i,1);save();render();
-        toast(moved.length?'Row deleted, its stickies moved to the parking lot':'Row deleted',()=>{S.rows.splice(i,0,r);moved.forEach(n=>n.row=r.id);save();render()})},isNew?'Add row':'Save');
+      if(isNew)S.rows.push({id:uid('r'),name,color});else Object.assign(r,{name,color});saveBoard()},
+      isNew?null:()=>{const i=S.rows.indexOf(r),moved=S.notes.filter(n=>n.row===r.id);moved.forEach(n=>{n.row=null;delete n.m;delete n.w});S.rows.splice(i,1);
+        saveBoard();saveNotes(moved);safeRender();
+        toast(moved.length?'Row deleted, its stickies moved to the parking lot':'Row deleted',()=>{S.rows.splice(i,0,r);saveBoard();safeRender()})},isNew?'Add row':'Save');
     setTimeout(()=>inp.focus(),40)})}
 function monthSheet(i){sheet((sh,close)=>{const inp=h('input',{type:'text',id:'month-name',value:S.months[i]});
   sh.append(h('h3',{textContent:'Rename month'}),h('div',{className:'field'},h('label',{htmlFor:'month-name',textContent:'Name'}),inp));
-  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.months[i]=v;save();render()});setTimeout(()=>inp.select(),40)})}
+  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.months[i]=v;saveBoard()});setTimeout(()=>inp.select(),40)})}
 $('#title').onclick=()=>sheet((sh,close)=>{const inp=h('input',{type:'text',id:'board-name',value:S.title});
   sh.append(h('h3',{textContent:'Board name'}),h('div',{className:'field'},h('label',{htmlFor:'board-name',textContent:'Name'}),inp));
-  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.title=v;save();render()})});
+  buttons(sh,close,()=>{const v=inp.value.trim();if(!v)return false;S.title=v;saveBoard()})});
 
-/* export / import / print */
+/* ===== export / import / print ===== */
 $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=h('a',{href:URL.createObjectURL(blob),download:'pull-plan-'+new Date().toISOString().slice(0,10)+'.json'});document.body.append(a);a.click();a.remove();toast('Exported',null)};
 $('#importBtn').onclick=()=>$('#importFile').click();
-$('#importFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);
-  if(!Array.isArray(d.rows)||!Array.isArray(d.notes)||!Array.isArray(d.months))throw 0;const old=S;S=d;save();render();toast('Board imported',()=>{S=old;save();render()})}
+$('#importFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);
+  if(!Array.isArray(d.rows)||!Array.isArray(d.notes)||!Array.isArray(d.months))throw 0;
+  const oldIds=S.notes.map(n=>n.id);d.notes.forEach((n,i)=>{if(n.pos==null)n.pos=i+1});S=d;safeRender();
+  await deleteNotes(oldIds);await saveBoard();await saveNotes(S.notes);toast('Board imported',null)}
   catch(err){toast('That file is not a pull plan export',null)}};r.readAsText(f);e.target.value=''};
 $('#printBtn').onclick=()=>window.print();
 
 let tt;function toast(msg,undo){const t=$('#toast');$('#toastMsg').textContent=msg;$('#undo').hidden=!undo;t.hidden=false;clearTimeout(tt);
   $('#undo').onclick=()=>{t.hidden=true;undo&&undo()};tt=setTimeout(()=>t.hidden=true,5000)}
-render();
+render();connect();
 })();
 </script>
 </body>
